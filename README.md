@@ -10,6 +10,22 @@ Local recognition of handwritten digits with a Swing/FlatLaf interface and Brain
 - JDK 22
 - Slangc (to use the GPU)
 
+## Build and run
+
+Build a single runnable jar that contains the application, all dependencies and the trained model:
+
+```bash
+./gradlew shadowJar
+```
+
+Run it with:
+
+```bash
+java --add-modules jdk.incubator.vector -jar build/libs/digitrecognizer-all.jar
+```
+
+The `--add-modules jdk.incubator.vector` flag is required by Brain4J's CPU backend.
+
 ## GPU note
 
 The `Use GPU` checkbox creates a Silicon/CUDA device (or Metal on macOS) and moves the model parameters to the GPU. The first use compiles the kernels through Slang and can take a few seconds. If `slangc` is not installed, the app shows `GPU unavailable: Slang not found` and continues using the CPU. You can provide an explicit path with the `SLANGC` environment variable or the `-Dsilicon.slangc=/path/to/slangc` property.
