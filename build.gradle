@@ -1,0 +1,60 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'it.echo'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url = uri('https://repo.brain4j.org/releases') }
+    maven { url = uri('https://repo.brain4j.org/snapshots') }
+}
+
+def brain4jVer = '3.0.0-40e4c722-SNAPSHOT'
+def flatLafVer = '3.7.2'
+
+dependencies {
+    implementation "org.brain4j:brain4j-core:$brain4jVer"
+    implementation "org.brain4j:brain4j-math:$brain4jVer"
+    implementation "org.brain4j:brain4j-datasets:$brain4jVer"
+
+    implementation "com.formdev:flatlaf:$flatLafVer"
+
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    toolchain {
+        // Brain4J 3.0 requires Java 22.
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
+
+application {
+    mainClass = 'it.echo.digitrecognizer.DigitRecognizerApp'
+    applicationDefaultJvmArgs = ['--add-modules', 'jdk.incubator.vector']
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    jvmArgs += ['--add-modules', 'jdk.incubator.vector']
+}
+
+tasks.register('train', JavaExec) {
+    group = 'application'
+    description = 'Trains the MNIST CNN and writes src/main/resources/models/mnist-cnn.zip'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'it.echo.digitrecognizer.ai.MnistTrainer'
+    jvmArgs += ['--add-modules', 'jdk.incubator.vector']
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
