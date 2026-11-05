@@ -44,6 +44,8 @@ import it.echo.digitrecognizer.ui.Theme;
 
 public final class MainFrame extends JFrame {
 
+    private static final int DEBOUNCE_MILLIS = 60;
+
     private final DigitCanvas canvas = new DigitCanvas();
     private final PredictionPanel predictionPanel = new PredictionPanel();
     private final ProbabilityPanel probabilityPanel = new ProbabilityPanel();
@@ -68,7 +70,7 @@ public final class MainFrame extends JFrame {
         setSize(1200, 820);
         setLocationRelativeTo(null);
 
-        debounce = new Timer(120, event -> runInference());
+        debounce = new Timer(DEBOUNCE_MILLIS, event -> runInference());
         debounce.setRepeats(false);
 
         canvas.setListener(this::onCanvasChanged);

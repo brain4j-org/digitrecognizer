@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -24,8 +24,11 @@ import org.brain4j.math.tensor.Tensor;
 public final class DigitRecognizer implements AutoCloseable {
 
     public static final int CLASSES = 10;
+
     private static final String MODEL_RESOURCE = "/models/mnist-cnn.zip";
     private static final Path DEV_MODEL = Path.of("src/main/resources/models/mnist-cnn.zip");
+    private static final List<MnistTransforms.Transform> TTA_TRANSFORMS =
+        MnistTransforms.testTimeVariants();
 
     private Sequential model;
     private volatile Device device;
@@ -44,7 +47,18 @@ public final class DigitRecognizer implements AutoCloseable {
     public static DigitRecognizer loadBundled() throws IOException {
         Path path = locateModel();
         Sequential model = ModelIO.load(new BrainFormat(), path.toFile());
-        return new DigitRecognizer(model);
+
+        return new DigitRecognizer(model).warmUp();
+    }
+
+    private DigitRecognizer warmUp() {
+        try {
+            predict(new float[28 * 28]);
+        } catch (RuntimeException exception) {
+            System.err.println("Warm-up failed: " + rootMessage(exception));
+        }
+
+        return this;
     }
 
     public float[] predict(float[] pixels28x28) {
@@ -52,23 +66,57 @@ public final class DigitRecognizer implements AutoCloseable {
             throw new IllegalArgumentException("Expected 784 pixels");
         }
 
-        Tensor input = Tensors.create(new int[] {1, 1, 28, 28}, pixels28x28);
+        Tensor batch = ttaBatch(pixels28x28);
 
         synchronized (inferenceLock) {
+            float[] output;
+
             if (device == null) {
-                return Arrays.copyOf(model.predict(input).data(), CLASSES);
+                output = model.predict(batch).data();
+            } else {
+                device.createResources();
+
+                try {
+                    Tensor input = batch.to(device);
+                    output = model.graph().predict(new StatesCache(false), input)[0].data();
+                } finally {
+                    device.closeResources();
+                }
             }
 
-            input = input.to(device);
-            device.createResources();
+            return average(output);
+        }
+    }
 
-            try {
-                Tensor output = model.graph().predict(new StatesCache(false), input)[0];
-                return Arrays.copyOf(output.data(), CLASSES);
-            } finally {
-                device.closeResources();
+    private static Tensor ttaBatch(float[] pixels28x28) {
+        int variants = TTA_TRANSFORMS.size();
+        float[] flat = new float[variants * pixels28x28.length];
+
+        for (int i = 0; i < variants; i++) {
+            float[] transformed = TTA_TRANSFORMS.get(i).apply(pixels28x28);
+            System.arraycopy(transformed, 0, flat, i * pixels28x28.length, pixels28x28.length);
+        }
+
+        return Tensors.create(new int[] {variants, 1, 28, 28}, flat);
+    }
+
+    private static float[] average(float[] output) {
+        float[] probabilities = new float[CLASSES];
+        int variants = TTA_TRANSFORMS.size();
+
+        for (int i = 0; i < variants; i++) {
+            for (int c = 0; c < CLASSES; c++) {
+                probabilities[c] += output[i * CLASSES + c];
             }
         }
+
+        float inverse = 1f / variants;
+
+        for (int c = 0; c < CLASSES; c++) {
+            probabilities[c] *= inverse;
+        }
+
+        return probabilities;
     }
 
     public CompletableFuture<float[]> predictAsync(float[] pixels28x28) {
